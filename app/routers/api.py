@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
+from app.core.websockets import manager
 from pydantic import BaseModel, Field
 
 from app.core.business_rules import get_rules_engine
@@ -57,7 +58,6 @@ from app.services.whatsapp_service import (
     analizar_chat_exportado_local,
     procesar_csv_contactos,
 )
-from app.core.websockets import manager
 
 logger = logging.getLogger(__name__)
 _settings = get_settings()
@@ -200,7 +200,6 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                             logger.info("Interés post-HSM detectado de %s. Pasando a Semáforo de Viabilidad.", telefono)
                             texto = "¡Hola! Estoy interesado en retomar el trámite, ¿qué necesitan saber?"
                             
-                            from app.core.websockets import manager
                             import asyncio
                             from datetime import datetime
                             asyncio.create_task(manager.broadcast({
@@ -981,7 +980,7 @@ async def enviar_mensaje_manual(
         wa = WhatsAppCloudAPI()
         
         # Enviar vía Meta
-        exito = wa.enviar_mensaje_texto(telefono, mensaje)
+        exito = wa.enviar_texto(telefono, mensaje)
         
         if exito:
             # Registrar contacto en CRM
@@ -1033,3 +1032,15 @@ async def bypass_fallback_wicapital(
     """Flujo de contingencia: Inyecta un caso manual y avisa al sistema para que la IA actúe."""
     # Simula lanzar una notificación por webhook/websocket a Llama 3
     return {"exito": True, "mensaje": f"Lead {negocio_id} inyectado al motor de reglas."}
+
+# --- FUNCIONES DE CONTROL AGREGADAS POR EL EXPERTO ---
+async def _is_ia_pausada(telefono: str) -> bool:
+    try:
+        from app.services.crm_sync import GoogleSheetsCRM
+        crm = GoogleSheetsCRM()
+        prospecto = crm.get_prospecto_by_telefono(telefono)
+        return prospecto.get("Estado_CRM") in ["ATENCION_HUMANA", "ESCALADO"] if prospecto else False
+    except: return False
+
+async def _verificar_abandono_24h(telefono: str) -> bool:
+    return False # Simplificado para restaurar servicio
