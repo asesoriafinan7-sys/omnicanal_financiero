@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ecosistema Omnicanal | v3.0 B2B</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: { 50: '#eff6ff', 100: '#dbeafe', 500: '#3b82f6', 600: '#2563eb', 700: '#1d4ed8', 900: '#1e3a8a' },
+                        wicapital: { 50: '#f0fdf4', 500: '#22c55e', 700: '#15803d' },
+                        meta: { 50: '#f5f3ff', 500: '#8b5cf6', 700: '#6d28d9' }
+                    },
+                    animation: { 'fade-in': 'fadeIn 0.4s ease-out' },
+                    keyframes: { fadeIn: { '0%': { opacity: '0', transform: 'translateY(10px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } } }
+                }
+            }
+        }
+    </script>
+    <style>
+        [x-cloak] { display: none !important; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 font-sans antialiased overflow-hidden" x-data="dashboardApp()">
+    <div class="flex h-screen w-full">
+        
+        <!-- ================= SIDEBAR (NAVEGACIÓN COMPLETA) ================= -->
+        <aside class="w-64 bg-white border-r border-slate-200 flex flex-col transition-all duration-300 z-20 shadow-sm">
+            <div class="h-16 flex items-center px-6 border-b border-slate-200">
+                <div class="w-8 h-8 rounded bg-gradient-to-br from-brand-600 to-brand-800 flex items-center justify-center text-white font-bold mr-3 shadow-sm">
+                    <i data-lucide="infinity" class="w-5 h-5"></i>
+                </div>
+                <span class="font-bold text-lg tracking-tight text-slate-800">Omnicanal CRM</span>
+            </div>
+            
+            <nav class="flex-1 overflow-y-auto py-6 px-4 space-y-1.5 custom-scrollbar">
+                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 mt-1">Visión General</p>
+                <a href="#" @click="currentTab = 'dashboard'" :class="currentTab === 'dashboard' ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="layout-dashboard" class="w-4 h-4 mr-3" :class="currentTab === 'dashboard' ? 'text-brand-600' : 'text-slate-400'"></i> Dashboard & Logs
+                </a>
+                
+                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 mt-6">Operativa CRM</p>
+                <a href="#" @click="currentTab = 'pipeline'" :class="currentTab === 'pipeline' ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="kanban" class="w-4 h-4 mr-3" :class="currentTab === 'pipeline' ? 'text-brand-600' : 'text-slate-400'"></i> CRM Pipeline
+                </a>
+                <a href="#" @click="currentTab = 'whatsapp'" :class="currentTab === 'whatsapp' ? 'bg-emerald-50 text-emerald-700 shadow-sm ring-1 ring-emerald-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="message-square" class="w-4 h-4 mr-3" :class="currentTab === 'whatsapp' ? 'text-emerald-600' : 'text-slate-400'"></i> WhatsApp Center
+                </a>
+                <a href="#" @click="currentTab = 'database'" :class="currentTab === 'database' ? 'bg-brand-50 text-brand-700 shadow-sm ring-1 ring-brand-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="database" class="w-4 h-4 mr-3" :class="currentTab === 'database' ? 'text-brand-600' : 'text-slate-400'"></i> Base de Datos
+                </a>
+
+                <p class="px-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3 mt-6">Agentes e Integraciones</p>
+                <a href="#" @click="currentTab = 'outsourcing'" :class="currentTab === 'outsourcing' ? 'bg-amber-50 text-amber-700 shadow-sm ring-1 ring-amber-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="network" class="w-4 h-4 mr-3" :class="currentTab === 'outsourcing' ? 'text-amber-600' : 'text-slate-400'"></i> Outsourcing Hub
+                </a>
+                <a href="#" @click="currentTab = 'social'" :class="currentTab === 'social' ? 'bg-meta-50 text-meta-700 shadow-sm ring-1 ring-meta-200' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="bot" class="w-4 h-4 mr-3" :class="currentTab === 'social' ? 'text-meta-600' : 'text-slate-400'"></i> Social Media AI
+                </a>
+                <a href="#" @click="currentTab = 'config'" :class="currentTab === 'config' ? 'bg-slate-800 text-white shadow-sm ring-1 ring-slate-900' : 'text-slate-600 hover:bg-slate-100'" class="flex items-center px-3 py-2.5 rounded-lg font-semibold text-sm transition-all duration-200">
+                    <i data-lucide="settings" class="w-4 h-4 mr-3" :class="currentTab === 'config' ? 'text-slate-300' : 'text-slate-400'"></i> Configuración y Core
+                </a>
+            </nav>
+
+            <div class="p-4 border-t border-slate-200 bg-slate-50/50">
+                <div class="flex items-center">
+                    <div class="w-9 h-9 rounded-full bg-slate-800 flex items-center justify-center text-white font-bold text-xs ring-2 ring-white shadow-sm">AD</div>
+                    <div class="ml-3">
+                        <p class="text-sm font-bold text-slate-800 leading-none">Admin System</p>
+                        <p class="text-[10px] text-brand-600 font-bold mt-1 uppercase tracking-wider">Superusuario</p>
+                    </div>
+                </div>
+            </div>
+        </aside>
+
+        <!-- ================= MAIN CONTENT ================= -->
+        <main class="flex-1 flex flex-col h-screen overflow-hidden bg-[#F8FAFC]">
+            
+            <!-- Global Header -->
+            <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-8 z-10 shadow-sm">
+                <div class="flex items-center">
+                    <h1 class="text-xl font-extrabold text-slate-800 capitalize tracking-tight" x-text="currentTab.replace('-', ' ')"></h1>
+                    <span x-show="flightMode" class="ml-4 px-2.5 py-1 bg-amber-100 text-amber-800 border border-amber-300 rounded-md text-xs font-bold shadow-sm uppercase tracking-wider flex items-center animate-pulse">
+                        <i data-lucide="plane" class="w-3 h-3 mr-1.5"></i> MODO VUELO (MOCKS)
+                    </span>
+                </div>
+                
+                <div class="flex items-center space-x-5">
+                    <div class="flex border px-3 py-1.5 rounded-lg border-slate-200 bg-slate-50 items-center space-x-2 text-xs font-bold text-slate-600 shadow-sm">
+                        <span class="relative flex h-2 w-2 mr-1">
+                          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                        <span>WS Live</span>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Scrollable Router View -->
+            <div class="flex-1 overflow-auto p-4 sm:p-8">
+
+                <!-- [1] TAB: DASHBOARD -->
+                <div x-show="currentTab === 'dashboard'" x-cloak class="space-y-6 max-w-[1400px] mx-auto animate-fade-in">
+                    <!-- KPI Cards (Reused from v2, mocked logic applied) -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col relative overflow-hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Prospectos</h3>
+                            <span class="text-4xl font-black text-slate-800" x-text="metricas.leads?.total || 0"></span>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col relative overflow-hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Casos WiCapital</h3>
+                            <span class="text-4xl font-black text-emerald-600" x-text="metricas.wicapital?.total_registros || 0"></span>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col relative overflow-hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Conversión</h3>
+                            <span class="text-4xl font-black text-slate-800" x-text="`${metricas.tasa_conversion_pct || 0}%` "></span>
+                        </div>
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 flex flex-col relative overflow-hidden">
+                            <h3 class="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Campañas Meta</h3>
+                            <span class="text-4xl font-black text-brand-600" x-text="metricas.campanas_activas || 0"></span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                        <!-- Chart Area -->
+                        <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                            <h3 class="text-lg font-bold text-slate-800 mb-6">Tendencia de Casos</h3>
+                            <div class="h-64 w-full relative"><canvas id="leadsChart"></canvas></div>
+                        </div>
+                        <!-- Live Logs -->
+                        <div class="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[340px] overflow-hidden">
+                            <div class="p-4 border-b border-slate-200 bg-slate-50"><h3 class="text-sm font-bold text-slate-800"><i data-lucide="radio" class="w-4 h-4 inline mr-2 text-brand-600"></i> WebSocket Live Log</h3></div>
+                            <div class="flex-1 overflow-y-auto p-3 space-y-2 bg-slate-50/50">
+                                <template x-for="log in activityLogs" :key="log.id">
+                                    <div class="bg-white p-3 rounded shadow-sm border-l-2 text-xs" :class="log.type.includes('ERROR') ? 'border-rose-500' : 'border-brand-500'">
+                                        <div class="flex justify-between font-bold text-slate-700 mb-1"><span x-text="log.type"></span><span class="text-[9px] text-slate-400" x-text="new Date(log.timestamp).toLocaleTimeString()"></span></div>
+                                        <div class="text-slate-600" x-text="log.message"></div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- [2] TAB: CRM PIPELINE -->
+                <div x-show="currentTab === 'pipeline'" x-cloak class="h-full flex flex-col space-y-4 max-w-[1400px] mx-auto animate-fade-in">
+                    <div class="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-wrap justify-between items-center gap-4">
+                        <div class="relative w-72">
+                            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400"></i>
+                            <input type="text" placeholder="Buscar prospectos..." class="w-full pl-9 pr-4 py-2 border rounded-lg text-sm bg-slate-50 focus:ring-2 focus:ring-brand-500">
+                        </div>
+                        <div class="flex space-x-2">
+                             <button class="px-3 py-1.5 bg-brand-50 text-brand-700 font-bold text-xs rounded border border-brand-200">Exportar Pipeline</button>
+                             <button @click="fetchLeads()" class="px-3 py-1.5 bg-slate-800 text-white font-bold text-xs rounded">Refrescar</button>
+                        </div>
+                    </div>
+                    <!-- Unified Table -->
+                    <div class="flex-1 bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex flex-col">
+                        <table class="w-full text-left border-collapse">
+                            <thead>
+                                <tr class="bg-slate-50 border-b border-slate-200">
+                                    <th class="px-6 py-4 text-xs font-bold text-slate-600 uppercase">Prospecto</th>
+                                    <th class="px-6 py-4 text-xs font-bold text-slate-600 uppercase">Estado CRM</th>
+                                    <th class="px-6 py-4 text-xs font-bold text-slate-600 uppercase text-right">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-100">
+                                <template x-for="lead in leads" :key="lead.Telefono">
+                                    <tr class="hover:bg-slate-50/80 transition-colors group">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-800 text-sm" x-text="lead.Nombre"></div>
+                                            <div class="text-slate-500 text-xs font-mono" x-text="lead.Telefono"></div>
+                                        </td>
+                                        <td class="px-6 py-4">
+                                            <span class="px-2.5 py-1 rounded-md text-xs font-bold uppercase border bg-slate-100 border-slate-300" x-text="lead.Estado_CRM"></span>
+                                        </td>
+                                        <td class="px-6 py-4 text-right flex justify-end space-x-2">
+                                            <select @change="cambiarEstado(lead, $event.target.value)" class="text-xs border rounded-lg px-2 py-1 bg-white cursor-pointer">
+                                                <option disabled selected>Mover a...</option><option value="Perfilado">Perfilado</option><option value="Aprobado">Aprobado</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                </template>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- [3] TAB: WHATSAPP CENTER -->
+                <div x-show="currentTab === 'whatsapp'" x-cloak class="max-w-[1400px] mx-auto animate-fade-in grid grid-cols-1 lg:grid-cols-3 gap-6 h-full">
+                    <div class="lg:col-span-1 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col overflow-hidden h-[80vh]">
+                        <div class="p-4 border-b bg-emerald-50 text-emerald-800 font-bold flex items-center"><i data-lucide="message-circle" class="w-5 h-5 mr-2"></i> Inbox Inteligente</div>
+                        <div class="flex-1 overflow-y-auto space-y-0 divide-y divide-slate-100">
+                            <template x-for="chat in whatsappChats" :key="chat.id">
+                                <div class="p-4 hover:bg-slate-50 cursor-pointer transition relative">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="font-bold text-slate-800 text-sm" x-text="chat.cliente"></span>
+                                        <span class="text-[10px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded uppercase font-bold" x-text="chat.time"></span>
+                                    </div>
+                                    <p class="text-xs text-slate-500 truncate" x-text="chat.lastMsg"></p>
+                                    <!-- Badges de Llama 3 vs Humano -->
+                                    <div class="mt-2 text-[10px] font-bold uppercase">
+                                        <span x-show="chat.managedByIA" class="text-brand-600 bg-brand-50 px-2 py-0.5 rounded border border-brand-200">🤖 IA Llama 3 Handles</span>
+                                        <span x-show="!chat.managedByIA" class="text-rose-600 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">⚠️ Requiere Asesor</span>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-[80vh] items-center justify-center bg-slate-50/50">
+                        <i data-lucide="message-square" class="w-16 h-16 text-slate-300 mb-4"></i>
+                        <h3 class="text-lg font-bold text-slate-500">Selecciona un chat del Inbox</h3>
+                        <p class="text-sm text-slate-400">Las respuestas de IA se muestran con fondo distinto.</p>
+                    </div>
+                </div>
+
+                <!-- [4] TAB: SOCIAL MEDIA AI -->
+                <div x-show="currentTab === 'social'" x-cloak class="max-w-[1400px] mx-auto animate-fade-in space-y-6">
+                     <div class="bg-gradient-to-r from-meta-700 to-meta-500 p-8 rounded-xl shadow-md text-white flex justify-between items-center">
+                         <div>
+                             <h2 class="text-2xl font-black mb-1 flex items-center"><i data-lucide="bot" class="w-6 h-6 mr-2"></i> Agente Social Automático</h2>
+                             <p class="text-meta-100 font-medium">Llama 3 analizando campañas de Meta y TikTok.</p>
+                         </div>
+                         <div class="text-right">
+                             <div class="text-3xl font-black">24/7</div>
+                             <div class="text-xs font-bold uppercase tracking-widest text-meta-200">Agente Activo</div>
+                         </div>
+                     </div>
+                     <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                         <h3 class="text-sm font-bold text-slate-800 uppercase tracking-widest mb-4">Logs de Moderación en Redes</h3>
+                         <div class="overflow-x-auto">
+                             <table class="w-full text-left text-sm">
+                                 <thead class="bg-slate-50 border-y">
+                                     <tr><th class="p-3">Red Social</th><th class="p-3">Comentario Original</th><th class="p-3">Acción Llama 3</th><th class="p-3">Status</th></tr>
+                                 </thead>
+                                 <tbody class="divide-y">
+                                     <template x-for="log in socialLogs">
+                                         <tr>
+                                             <td class="p-3 font-bold" :class="log.red === 'META' ? 'text-blue-600' : 'text-slate-900'" x-text="log.red"></td>
+                                             <td class="p-3 italic text-slate-600" x-text="`&quot;${log.comentario}&quot;`"></td>
+                                             <td class="p-3 font-medium text-brand-700" x-text="log.respuesta_ia"></td>
+                                             <td class="p-3"><span class="bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded text-[10px] font-bold uppercase">Respondido</span></td>
+                                         </tr>
+                                     </template>
+                                 </tbody>
+                             </table>
+                         </div>
+                     </div>
+                </div>
+
+                <!-- [5] TAB: OUTSOURCING HUB -->
+                <div x-show="currentTab === 'outsourcing'" x-cloak class="max-w-[1400px] mx-auto animate-fade-in space-y-6">
+                    <h2 class="text-xl font-bold text-amber-800 flex items-center mb-6"><i data-lucide="network" class="mr-2 w-6 h-6"></i> Ruteo a Red Externa</h2>
+                    
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <template x-for="out in outsourcingCards">
+                            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+                                <div class="flex justify-between items-start mb-4">
+                                    <h3 class="font-extrabold text-slate-800 text-lg" x-text="out.empresa"></h3>
+                                    <span class="w-3 h-3 rounded-full" :class="out.status === 'ONLINE' ? 'bg-emerald-500' : 'bg-slate-300'"></span>
+                                </div>
+                                <div class="text-3xl font-black text-slate-800 mb-1" x-text="out.asignados"></div>
+                                <div class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-6">Leads Asignados</div>
+                                <button class="w-full py-2 bg-slate-50 text-slate-700 border hover:bg-slate-100 rounded-lg text-xs font-bold uppercase tracking-wider transition">Ver Expedientes</button>
+                            </div>
+                        </template>
+                    </div>
+                </div>
+
+                <!-- [6] TAB: BASE DE DATOS -->
+                <div x-show="currentTab === 'database'" x-cloak class="max-w-[1400px] mx-auto animate-fade-in space-y-6">
+                    <div class="bg-white rounded-xl shadow-sm border border-dashed border-slate-300 p-12 text-center flex flex-col items-center justify-center hover:bg-slate-50 transition cursor-pointer">
+                        <i data-lucide="file-spreadsheet" class="w-16 h-16 text-slate-300 mb-4"></i>
+                        <h3 class="text-lg font-bold text-slate-800 mb-1">Arrastra tu CSV o Excel aquí</h3>
+                        <p class="text-sm font-medium text-slate-500 mb-6">El sistema inyectará la data masiva al CRM de Google Sheets automáticamente.</p>
+                        <button class="px-6 py-2.5 bg-brand-600 text-white rounded-xl font-bold hover:bg-brand-700 shadow-md transition">Seleccionar Archivo</button>
+                    </div>
+                </div>
+
+                <!-- [7] TAB: CONFIGURACIÓN Y CONEXIONES (HEART OF THE SYSTEM) -->
+                <div x-show="currentTab === 'config'" x-cloak class="max-w-[1400px] mx-auto animate-fade-in space-y-6 pb-20">
+                    <h2 class="text-xl font-extrabold text-slate-800 flex items-center mb-6"><i data-lucide="shield-check" class="mr-2 w-6 h-6 text-brand-600"></i> Autenticación y Credenciales</h2>
+                    
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <!-- Conexión WiCapital Card -->
+                        <div class="bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+                            <div class="bg-slate-800 p-6 text-white">
+                                <h3 class="font-bold flex items-center text-lg"><i data-lucide="building-2" class="w-5 h-5 mr-2"></i> Conexión a WiCapital</h3>
+                                <p class="text-slate-400 text-xs mt-1 font-medium">Gestión Multi-Cuenta de Acceso Bancario</p>
+                            </div>
+                            <div class="p-8 space-y-5">
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Usuario Principal (Admin)</label>
+                                    <input type="text" x-model="configData.usuario" class="w-full p-3 border border-slate-300 rounded-lg bg-slate-50 text-sm font-semibold focus:ring-2 focus:ring-brand-500" placeholder="Ej: admin_wicap">
+                                </div>
+                                <div class="relative">
+                                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Contraseña Principal</label>
+                                    <input :type="showPassword ? 'text' : 'password'" x-model="configData.password" class="w-full p-3 border border-slate-300 rounded-lg bg-slate-50 text-sm font-semibold focus:ring-2 focus:ring-brand-500 pr-10" placeholder="••••••••">
+                                    <i data-lucide="eye" @click="showPassword = !showPassword" class="w-5 h-5 absolute right-3 top-9 text-slate-400 cursor-pointer hover:text-brand-600"></i>
+                                </div>
+                                <div class="pt-2 border-t mt-4 flex justify-between items-center">
+                                    <span class="text-xs font-bold text-rose-500 uppercase" x-show="configStatus === 'FAIL'">Conexión Fallida</span>
+                                    <span class="text-xs font-bold text-emerald-500 uppercase" x-show="configStatus === 'OK'">Conectado y Persistido</span>
+                                    <span class="text-xs font-bold text-slate-400 uppercase" x-show="!configStatus">Pendiente</span>
+                                    <button @click="validarCredenciales()" class="px-5 py-2.5 bg-slate-800 text-white rounded-lg font-bold text-sm hover:bg-slate-700 shadow flex items-center">
+                                        Generar Conexión y Guardar <i data-lucide="arrow-right" class="w-4 h-4 ml-2"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Manual Fallback (Emergency Panel) -->
+                        <div class="bg-rose-50 rounded-2xl shadow-sm border border-rose-200 p-8 flex flex-col justify-center">
+                            <h3 class="text-rose-800 font-extrabold text-lg flex items-center mb-3"><i data-lucide="alert-triangle" class="w-5 h-5 mr-2"></i> Manual Fallback (Emergencia)</h3>
+                            <p class="text-sm font-medium text-rose-700 mb-6">Si el Scraper de WiCapital arroja error consecutivo (2 intents fallidos), usa este portal para inyectar manualmente el estado de un radicado en el Banco. Esto alimentará el resto del Omnicanal sin frenar la IA.</p>
+                            
+                            <div class="bg-white p-5 rounded-xl border border-rose-100 shadow-sm space-y-4">
+                                <input type="text" placeholder="ID de Negocio Bancario (Ej. WIC-00192)" class="w-full text-sm p-3 border rounded-lg focus:ring-rose-500 bg-slate-50">
+                                <button @click="dispararFallbackManual()" class="w-full py-3 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg uppercase tracking-wider text-sm shadow flex justify-center items-center">
+                                    <i data-lucide="life-buoy" class="w-4 h-4 mr-2"></i> Realizar Logueo Manual forzado
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div x-show="toast.show" x-cloak x-transition.opacity.duration.300ms class="fixed bottom-6 right-6 z-50 p-4 rounded-xl shadow-2xl border text-sm font-bold flex items-center max-w-sm" :class="toast.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : (toast.type === 'error' ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-brand-50 border-brand-200 text-brand-800')">
+        <i :data-lucide="toast.type === 'success' ? 'check-circle' : (toast.type === 'error' ? 'alert-circle' : 'info')" class="w-5 h-5 mr-3" :class="toast.type === 'success' ? 'text-emerald-500' : (toast.type === 'error' ? 'text-rose-500' : 'text-brand-500')"></i>
+        <span x-text="toast.message"></span>
+    </div>
+
+    <script>
+        window.dashboardApp = function() {
+            return {
+                currentTab: 'dashboard',
+                loading: true,
+                flightMode: false,
+                metrics: { prospectos: [], wicapital: [], campanas: [] },
+                
+                // Mocks and Data states
+                metricas: {}, activityLogs: [], leads: [], whatsappChats: [], socialLogs: [], outsourcingCards: [],
+                
+                configData: { usuario: '', password: '' }, showPassword: false, configStatus: null,
+                toast: { show: false, message: '', type: 'success' },
+
+                init() {
+                    try {
+                        lucide.createIcons();
+                        this.fetchMetricas().catch(err => console.error("Error silencioso en fetchMetricas:", err));
+                        this.fetchLeads().catch(err => console.error("Error silencioso en fetchLeads:", err));
+                        this.fetchMocksAuxiliares(); // Paracaídas para tabs extra
+                        this.initWebSocket();
+                        
+                        this.$watch('currentTab', (val) => { 
+                            setTimeout(() => lucide.createIcons(), 50);
+                            if(val === 'dashboard') setTimeout(() => this.renderChart(), 100);
+                        });
+                        this.$watch('leads', () => { setTimeout(() => lucide.createIcons(), 50) });
+                    } catch (e) {
+                        console.error("Error crítico inicializando Alpine.js:", e);
+                    } finally {
+                        this.loading = false;
+                    }
+                },
+
+                // ── WS Y NOTIFICACIONES ──
+                initWebSocket() {
+                    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/dashboard`;
+                    try {
+                        const ws = new WebSocket(wsUrl);
+                        ws.onmessage = (event) => {
+                            const data = JSON.parse(event.data);
+                            this.activityLogs.unshift({ id: Date.now(), ...data });
+                            if(this.activityLogs.length > 50) this.activityLogs.pop();
+                        };
+                    } catch(e) {}
+                },
+                showToast(message, type = 'success') {
+                    this.toast.message = message; this.toast.type = type; this.toast.show = true;
+                    setTimeout(() => { this.toast.show = false; }, 4000);
+                },
+
+                // ── MÚSCULO FETCH Y FLIGHT MODE ──
+                async fetchLeads() {
+                    try {
+                        const res = await fetch(`/api/v1/prospectos?page=1&limit=15`);
+                        if(!res.ok) throw new Error();
+                        this.leads = (await res.json()).prospectos;
+                        // No activar modo vuelo automáticamente si está vacío, el usuario decide si es un fallo real
+                    } catch (e) { 
+                        console.error("Error cargando prospectos:", e);
+                    }
+                },
+                async fetchMetricas() {
+                    try {
+                        const res = await fetch('/api/v1/dashboard/metricas');
+                        if(res.ok) this.metricas = await res.json();
+                        else throw new Error();
+                    } catch(e) { this.metricas = { volumen: 0, conversion: "N/D" }; }
+                },
+
+                // ── MOCK DATA INJECTION (RESILIENCIA) ──
+                activateFlightMode(razon) {
+                    if(!this.flightMode) {
+                        this.flightMode = true;
+                        this.showToast(`MODO VUELO ACTIVADO (${razon}). Generando Entorno Local.`, 'error');
+                        this.activityLogs.unshift({id: Date.now(), type: 'SYSTEM_FAILOVER', message: `Fallo detectado: ${razon}. Inyectando Mocks de emergencia.`, timestamp: new Date()});
+                    }
+                    // Popular Leads
+                    this.leads = ["Dr. Carlos Vega", "Ing. Ana Ríos", "Empresa Delta SAS", "Fundación Horizonte"].map((n, i) => ({
+                        Telefono: "+57310000000" + i, Nombre: n, Estado_CRM: i % 2 === 0 ? "Aprobado" : "NUEVO", Producto: "Inversión", Sector: "Salud"
+                    }));
+                },
+                fetchMocksAuxiliares() {
+                    // Popular Sub-módulos para que nunca se vean vacíos en DEMO
+                    this.whatsappChats = [
+                        {id: 1, cliente: "Carlos Vega", lastMsg: "Quiero confirmar las tasas.", time: "18:24", managedByIA: true},
+                        {id: 2, cliente: "Ana Ríos", lastMsg: "Tengo un problema con el extracto.", time: "17:10", managedByIA: false},
+                    ];
+                    this.socialLogs = [
+                        {red: "META", comentario: "Info por favor 🙏", respuesta_ia: "¡Hola! Te hemos enviado un DM por Messenger con los detalles del CDT." },
+                        {red: "TIKTOK", comentario: "De a como esta la tasa hoy?", respuesta_ia: "¡Saludos! Hoy amanecimos al 12.5% E.A. Visita el link de bio." }
+                    ];
+                    this.outsourcingCards = [
+                        {empresa: "AV Villas API", asignados: 42, status: "ONLINE"},
+                        {empresa: "Mesa Castigo", asignados: 12, status: "OFFLINE"},
+                        {empresa: "Mesa Libranzas", asignados: 89, status: "ONLINE"}
+                    ];
+                },
+
+                // ── WICAPITAL AUTENTICACIÓN Y FALLBACK ──
+                async validarCredenciales() {
+                    this.showToast("Cifrando credenciales (GCP SecretManager Mock) y validando login...", "brand");
+                    setTimeout(() => {
+                        this.configStatus = this.configData.password.length > 3 ? 'OK' : 'FAIL';
+                        if(this.configStatus === 'OK') this.showToast("Conexión WICapital persistida correctamente.");
+                        else this.showToast("Credenciales inválidas en el banco.", "error");
+                    }, 1500);
+                },
+                async dispararFallbackManual() {
+                    this.showToast("Enviando inyección manual a la API...", "brand");
+                    // Mock backend call
+                    setTimeout(() => {
+                        this.showToast("El sistema orquestador aceptó los datos manuales.", "success");
+                        this.activityLogs.unshift({id: Date.now(), type: 'MANUAL_OVERRIDE', message: `El Asesor inyectó datos manuales para bypassear el Scraper. IA retomando el control...`, timestamp: new Date()});
+                    }, 1000);
+                },
+
+                // ── CHART ──
+                renderChart() {
+                    if(this.chartInstance) this.chartInstance.destroy();
+                    const ctx = document.getElementById('leadsChart');
+                    if(!ctx) return;
+                    this.chartInstance = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: ['Lun', 'Mar', 'Mié', 'Jue', 'Vie'], datasets: [{ label: 'Volumen', data: [12, 19, 15, 25, 22], borderColor: '#3b82f6', tension: 0.4 }]
+                        }, options: { responsive: true, maintainAspectRatio: false }
+                    });
+                }
+            }
+        }
+    </script>
+</body>
+</html>

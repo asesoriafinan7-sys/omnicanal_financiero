@@ -1,0 +1,44 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — Ecosistema Omnicanal Financiero (Desarrollo Local)
+# Levanta el API FastAPI localmente con hot-reload.
+# Uso: docker-compose up --build
+# ─────────────────────────────────────────────────────────────────────────────
+
+version: "3.9"
+
+services:
+  omnicanal-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: omnicanal_financiero_api
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      - APP_ENV=development
+      - APP_DEBUG=true
+    volumes:
+      # Hot-reload: monta el código fuente directamente
+      - ./app:/app/app:ro
+      - ./main.py:/app/main.py:ro
+      # Montar credenciales de GCP
+      - ./infra/service_account.json:/app/infra/service_account.json:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    command: >
+      uvicorn main:app
+      --host 0.0.0.0
+      --port 8080
+      --reload
+      --log-level info
+
+networks:
+  default:
+    name: omnicanal_network

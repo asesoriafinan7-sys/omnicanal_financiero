@@ -1,0 +1,45 @@
+# requirements.txt -- Ecosistema Omnicanal Financiero v3.0
+# Dependencias sin anclar (unpinned) para permitir que el resolutor
+# de pip de Python 3.11+ encuentre versiones compatibles automáticamente.
+
+# Web Framework
+fastapi
+uvicorn[standard]
+python-multipart
+
+# IA -- Vertex AI
+# google-cloud-aiplatform provee el namespace "vertexai"
+google-cloud-aiplatform
+
+# GCP
+google-cloud-firestore
+google-cloud-secret-manager
+google-auth
+
+# Google Sheets
+gspread
+
+# Scraping WiCapital
+selenium
+webdriver-manager
+
+# HTTP
+requests
+httpx
+
+# Validacion
+pydantic
+pydantic-settings
+python-dotenv
+
+# Festivos Colombia
+holidays
+
+# Datos
+pandas
+openpyxl
+xlrd
+
+# Utilidades
+python-dateutil
+pytz
