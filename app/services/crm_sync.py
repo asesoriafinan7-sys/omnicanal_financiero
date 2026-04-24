@@ -394,18 +394,34 @@ class WiCapitalMonitor:
 
     @staticmethod
     def _configure_webdriver() -> webdriver.Chrome:
+        # [Antigravity] Parche de estabilización WebDriver
         opts = Options()
-        opts.add_argument("--headless")
+        # Opciones críticas para evitar crashes en contenedores (Cloud Run / Docker)
+        opts.add_argument("--headless=new")
         opts.add_argument("--no-sandbox")
         opts.add_argument("--disable-dev-shm-usage")
         opts.add_argument("--disable-gpu")
+        opts.add_argument("--disable-software-rasterizer")
         opts.add_argument("--window-size=1920,1080")
         opts.add_argument("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36")
-        service = Service(executable_path="/usr/bin/chromedriver")
-        return webdriver.Chrome(service=service, options=opts)
+        
+        # Opcional: Obtener rutas de variables de entorno (Cloud Run)
+        chrome_bin = os.getenv("CHROME_BIN")
+        if chrome_bin:
+            opts.binary_location = chrome_bin
+            
+        driver_path = os.getenv("CHROMEDRIVER_PATH", "/usr/bin/chromedriver")
+        service = Service(executable_path=driver_path)
+        
+        try:
+            return webdriver.Chrome(service=service, options=opts)
+        except Exception as exc:
+            logger.critical("Error inicializando ChromeDriver en %s: %s", driver_path, exc)
+            raise
 
     def _login(self, driver: webdriver.Chrome) -> bool:
         """Realiza el login en el CRM WiCapital. Retorna True si es exitoso."""
+        from selenium.common.exceptions import TimeoutException, WebDriverException
         try:
             driver.get(_settings.wicapital_login_url)
             wait = WebDriverWait(driver, 15)
@@ -422,14 +438,23 @@ class WiCapitalMonitor:
             time.sleep(4)
             logger.info("Login en WiCapital exitoso.")
             return True
+        except TimeoutException:
+            logger.error("TimeoutException: El DOM de login de WiCapital cambió o no cargó.")
+            self._telegram.alerta_error_critico("WiCapital Scraper", "TimeoutException en Login. Verifica el DOM.")
+            return False
+        except WebDriverException as exc:
+            logger.error("WebDriverException en login WiCapital: %s", exc)
+            self._telegram.alerta_error_critico("WiCapital Scraper", f"Crash de Selenium en Login: {exc}")
+            return False
         except Exception as exc:
-            logger.error("Error en login WiCapital: %s", exc, exc_info=True)
+            logger.error("Error inesperado en login WiCapital: %s", exc, exc_info=True)
             return False
 
     def _scrape_seccion(
         self, driver: webdriver.Chrome, seccion: str
     ) -> Dict[str, CreditoWiCapital]:
         """Extrae todos los créditos de una sección del CRM."""
+        from selenium.common.exceptions import TimeoutException, WebDriverException
         creditos: Dict[str, CreditoWiCapital] = {}
         try:
             wait = WebDriverWait(driver, 15)
@@ -466,15 +491,21 @@ class WiCapitalMonitor:
                         sub_estado=sub_estado,
                         fecha=fecha,
                     )
+        except TimeoutException:
+            logger.warning("TimeoutException extrayendo sección '%s'. Posible DOM cambiado o sin registros.", seccion)
+            self._telegram.alerta_error_critico("WiCapital Scraper", f"Timeout en sección {seccion}")
+        except WebDriverException as exc:
+            logger.error("WebDriverException en sección '%s': %s", seccion, exc)
         except Exception as exc:
             logger.error("Error extrayendo sección '%s': %s", seccion, exc)
         return creditos
 
     def scrape_all_sections(self) -> Dict[str, CreditoWiCapital]:
         """Ejecuta el scraping completo de todas las secciones. Retorna dict por ID."""
-        driver = self._configure_webdriver()
         all_credits: Dict[str, CreditoWiCapital] = {}
+        driver = None
         try:
+            driver = self._configure_webdriver()
             if not self._login(driver):
                 self._telegram.alerta_error_critico("WiCapitalMonitor", "Login fallido — verificar credenciales.")
                 return {}
@@ -483,8 +514,15 @@ class WiCapitalMonitor:
                 logger.info("Procesando sección: %s", seccion)
                 sección_credits = self._scrape_seccion(driver, seccion)
                 all_credits.update(sección_credits)
+        except Exception as exc:
+            logger.error("Crash total en WiCapitalMonitor: %s", exc)
+            self._telegram.alerta_error_critico("WiCapitalMonitor", f"Crash crítico en scraping: {exc}")
         finally:
-            driver.quit()
+            if driver:
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
         return all_credits
 
     def process_and_notify(self, current_data: Dict[str, CreditoWiCapital]) -> int:

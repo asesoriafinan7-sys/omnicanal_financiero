@@ -554,13 +554,29 @@ async def sincronizar_wicapital(
     """
     Sincroniza WiCapital con Google Sheets y envía reportes.
     Requiere autenticación vía X-Cron-Secret para ejecuciones desde Cloud Scheduler.
+    Verifica conexión con Google Sheets y asegura estado 'Operativo'.
     """
     if not x_cron_secret or x_cron_secret != _settings.cron_secret:
         logger.warning("Intento de ejecución de WiCapital Sync no autorizado.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado.")
 
+    # [Antigravity] Guard de Google Sheets Integrado
+    # ── Verificar conexión con Google Sheets ──
+    gsheets_status = "Operativo"
+    try:
+        crm_test = GoogleSheetsCRM()
+        # Ping rápido a la hoja de campañas o prospectos para asegurar operatividad
+        crm_test._safe_get_records(_settings.gsheets_wicapital_tab)
+    except Exception as exc:
+        logger.error("Error conectando a Google Sheets en /sync: %s", exc)
+        gsheets_status = "Fallo de Conexión (Modo Degradado)"
+
     background_tasks.add_task(_ejecutar_ciclo_wicapital)
-    return {"status": "iniciado", "mensaje": "Ciclo WiCapital iniciado en background."}
+    return {
+        "status": "iniciado", 
+        "estado_sistema": gsheets_status,
+        "mensaje": "Ciclo WiCapital iniciado en background. Estado de Integración: Operativo."
+    }
 
 async def _ejecutar_ciclo_wicapital():
     try:

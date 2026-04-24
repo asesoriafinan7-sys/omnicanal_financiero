@@ -13,10 +13,12 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
-        for connection in self.active_connections:
+        # [Antigravity] Parche de resiliencia de WebSockets
+        # Iterar sobre una copia para poder remover conexiones caídas de la lista original
+        for connection in list(self.active_connections):
             try:
                 await connection.send_json(message)
             except Exception:
-                pass
+                self.disconnect(connection)
 
 manager = ConnectionManager()
