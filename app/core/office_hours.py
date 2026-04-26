@@ -12,11 +12,16 @@ from __future__ import annotations
 import logging
 from datetime import datetime, time as dtime
 from typing import Any, Dict, List, Optional
-from zoneinfo import ZoneInfo
+
+try:
+    from zoneinfo import ZoneInfo
+    BOGOTA_TZ = ZoneInfo("America/Bogota")
+except Exception:
+    from datetime import timezone, timedelta
+    # Fallback a UTC-5 si no hay base de datos de zonas horarias (común en Windows sin tzdata)
+    BOGOTA_TZ = timezone(timedelta(hours=-5))
 
 logger = logging.getLogger(__name__)
-
-BOGOTA_TZ = ZoneInfo("America/Bogota")
 
 # ─── Festivos Colombia 2025-2026 (fecha ISO) ─────────────────────────────────
 # Actualizar anualmente. Se cargan también desde business_rules.json si están disponibles.
@@ -132,11 +137,10 @@ def enqueue_message(
     return doc_ref.id
 
 
-def process_queue(max_items: int = 100) -> int:
+async def process_queue(max_items: int = 100) -> int:
     """
-    Procesa los mensajes pendientes en la cola.
-    Llamar al inicio de cada jornada laboral desde el scheduler de main.py.
-    Retorna la cantidad de mensajes procesados.
+    Procesa los mensajes pendientes en la cola de manera asíncrona.
+    Aplica un rate-limit de 4 segundos entre envíos para seguridad anti-ban.
     """
     if not is_office_hours():
         logger.info("process_queue: fuera de horario — no se procesa cola.")
@@ -144,6 +148,7 @@ def process_queue(max_items: int = 100) -> int:
 
     db = _get_db()
     from google.cloud import firestore
+    import asyncio
 
     cola = (
         db.collection("messages_queue")
@@ -157,41 +162,51 @@ def process_queue(max_items: int = 100) -> int:
     for doc in cola:
         try:
             data = doc.to_dict()
-            _reenviar_a_pipeline(data)
+            # Inyectar al pipeline de forma asíncrona y esperar delay
+            await _reenviar_a_pipeline(data)
+            
             doc.reference.update({
                 "procesado": True,
                 "procesado_en": firestore.SERVER_TIMESTAMP,
             })
             procesados += 1
+            
+            # Rate limit preventivo entre mensajes de la cola
+            if procesados < max_items:
+                logger.info("Esperando 4s para el siguiente mensaje de la cola...")
+                await asyncio.sleep(4.0)
+                
         except Exception as exc:
             logger.error("Error procesando mensaje encolado %s: %s", doc.id, exc)
 
-    logger.info("Cola procesada: %d mensajes reenviados al pipeline.", procesados)
+    logger.info("Cola procesada: %d mensajes reactivados con contexto temporal.", procesados)
     return procesados
 
 
-def _reenviar_a_pipeline(data: Dict[str, Any]) -> None:
+async def _reenviar_a_pipeline(data: Dict[str, Any]) -> None:
     """
-    Reenvia un mensaje encolado al pipeline completo de procesamiento.
-    Construye un body sintético compatible con el webhook de WhatsApp.
+    Reenvia un mensaje encolado al pipeline con flag de reactivación.
     """
-    import asyncio
+    from app.routers.api import _procesar_mensaje_entrante
+    from datetime import datetime
 
-    from app.routers.api import _procesar_mensaje_entrante  # importación local
-
+    # Payload sintético con metadato de reactivación
     body = {
         "object": "whatsapp_business_account",
         "entry": [{
-            "id": "queue",
+            "id": "queue_reactivation",
             "changes": [{
                 "field": "messages",
                 "value": {
                     "messaging_product": "whatsapp",
-                    "metadata": {},
+                    "metadata": {
+                        "is_queue_reactivation": True,
+                        "original_received_at": data.get("recibido_en").isoformat() if hasattr(data.get("recibido_en"), "isoformat") else None
+                    },
                     "contacts": [{"profile": {"name": data.get("nombre", "Desconocido")}, "wa_id": data["telefono"].replace("+", "")}],
                     "messages": [{
                         "from": data["telefono"].replace("+", ""),
-                        "id": f"queue_{data['telefono']}",
+                        "id": f"q_{data['telefono']}_{int(datetime.now().timestamp())}",
                         "timestamp": str(int(datetime.now().timestamp())),
                         "text": {"body": data["texto"]},
                         "type": "text",
@@ -202,10 +217,6 @@ def _reenviar_a_pipeline(data: Dict[str, Any]) -> None:
     }
 
     try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(_procesar_mensaje_entrante(body))
-        else:
-            loop.run_until_complete(_procesar_mensaje_entrante(body))
+        await _procesar_mensaje_entrante(body)
     except Exception as exc:
         logger.error("Error reenviando mensaje desde cola: %s", exc)

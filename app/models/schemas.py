@@ -70,12 +70,12 @@ class EstadoWiCapital(str, Enum):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class WAProfile(BaseModel):
-    name: str
+    name: Optional[str] = None
 
 
 class WAContact(BaseModel):
-    profile: WAProfile
-    wa_id: str
+    profile: Optional[WAProfile] = None
+    wa_id: Optional[str] = None
 
 
 class WATextMessage(BaseModel):
@@ -103,7 +103,7 @@ class WAMessage(BaseModel):
 
 class WAValue(BaseModel):
     messaging_product: str
-    metadata: Dict[str, Any]
+    metadata: Optional[Dict[str, Any]] = None
     contacts: Optional[List[WAContact]] = None
     messages: Optional[List[WAMessage]] = None
     statuses: Optional[List[Dict[str, Any]]] = None

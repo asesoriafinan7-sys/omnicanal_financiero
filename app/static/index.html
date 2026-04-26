@@ -441,6 +441,15 @@
                         {empresa: "Mesa Libranzas", asignados: 89, status: "ONLINE"}
                     ];
                 },
+                
+                // ── PIPELINE Y ACCIONES ──
+                async cambiarEstado(lead, nuevoEstado) {
+                    this.showToast(`Cambiando estado de ${lead.Nombre} a ${nuevoEstado}...`, "brand");
+                    setTimeout(() => {
+                        lead.Estado_CRM = nuevoEstado;
+                        this.showToast("Estado actualizado correctamente", "success");
+                    }, 500);
+                },
 
                 // ── WICAPITAL AUTENTICACIÓN Y FALLBACK ──
                 async validarCredenciales() {

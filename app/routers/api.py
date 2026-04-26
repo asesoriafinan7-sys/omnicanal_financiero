@@ -51,6 +51,8 @@ from app.services.crm_sync import (
     WiCapitalMonitor,
     limpiar_y_segmentar_base,
 )
+from app.services.firestore_service import FirestoreCRM
+from app.services.firestore_service import FirestoreCRM
 from app.services.routing_service import RuteoService
 from app.services.whatsapp_service import (
     WhatsAppCloudAPI,
@@ -58,6 +60,13 @@ from app.services.whatsapp_service import (
     procesar_csv_contactos,
 )
 from app.core.websockets import manager
+
+from app.core.office_hours import (
+    enqueue_message,
+    get_mensaje_espera,
+    is_office_hours,
+    process_queue,
+)
 
 logger = logging.getLogger(__name__)
 _settings = get_settings()
@@ -95,12 +104,12 @@ async def health_check() -> Dict[str, Any]:
 async def ver_reglas_negocio() -> Dict[str, Any]:
     """Retorna las reglas de negocio activas (cargadas desde business_rules.json)."""
     import json
-    from pathlib import Path
+    from app.core.business_rules import _RULES_PATH
     try:
-        rpath = Path(__file__).parent.parent / "core" / "business_rules.json"
-        with open(rpath, "r", encoding="utf-8") as f:
+        with open(_RULES_PATH, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception as exc:
+        logger.error(f"Error cargando reglas de negocio desde {_RULES_PATH}: {exc}")
         raise HTTPException(status_code=500, detail=f"No se pudo cargar reglas: {exc}")
 
 
@@ -158,7 +167,8 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
     try:
         webhook  = WhatsAppWebhook(**body)
         wa       = WhatsAppCloudAPI()
-        crm      = GoogleSheetsCRM()
+        crm_fs   = FirestoreCRM() # Fuente de verdad
+        crm_gs   = GoogleSheetsCRM() # Respaldo opcional
         telegram = TelegramAlerter()
         engine   = get_rules_engine()
         ruteo    = RuteoService()
@@ -193,14 +203,17 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                                 estado_crm="DESCALIFICADO",
                                 notas="🔥 Opt-Out: Usuario solicitó baja vía botón HSM."
                             )
-                            crm.upsert_prospecto(prospecto_baja)
+                            crm_fs.upsert_prospecto(prospecto_baja)
+                            try:
+                                crm_gs.upsert_prospecto(prospecto_baja)
+                            except Exception as gexc:
+                                logger.warning("Fallo secundario Sheets en baja: %s", gexc)
                             continue  # Abortar síncronamente aquí
                             
                         elif btn_id == "BTN_INTERESA":
                             logger.info("Interés post-HSM detectado de %s. Pasando a Semáforo de Viabilidad.", telefono)
                             texto = "¡Hola! Estoy interesado en retomar el trámite, ¿qué necesitan saber?"
                             
-                            from app.core.websockets import manager
                             import asyncio
                             from datetime import datetime
                             asyncio.create_task(manager.broadcast({
@@ -218,18 +231,41 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                     logger.info("📩 Procesando texto final de %s: %s", telefono, texto[:100])
 
                     # ── 1. GUARD DE HORARIO ───────────────────────────────────
-                    if not is_office_hours():
+                    # Extraer metadatos de reactivación si existen
+                    is_reactivacion = val.metadata.get("is_queue_reactivation", False) if val.metadata else False
+                    
+                    if not is_office_hours() and not is_reactivacion:
                         if telefono not in _fuera_horario_enviado:
                             wa.enviar_texto(telefono, get_mensaje_espera())
                             _fuera_horario_enviado.add(telefono)
+                        
+                        # Actualizar CRM a ESPERANDO_APERTURA
+                        crm.actualizar_estado_crm(telefono, "ESPERANDO_APERTURA", f"Lead escribió fuera de horario: {texto[:50]}...")
+                        
                         enqueue_message(telefono, texto, nombre)
-                        logger.info("⏰ Fuera de horario — mensaje encolado: %s", telefono)
+                        logger.info("⏰ Fuera de horario — mensaje encolado y CRM actualizado: %s", telefono)
                         continue
                     else:
                         # Limpiar marca cuando vuelve en horario
                         _fuera_horario_enviado.discard(telefono)
 
-                    # ── 2. VERIFICAR ESCALADA A HUMANO ───────────────────────
+                    # ── 2. CONSULTAR FIRESTORE (Fuente de Verdad) ─────────────
+                    prospecto_existente = crm_fs.get_prospecto(telefono)
+                    
+                    # SILENCIO PROACTIVO: Si viene de Scraper o está en proceso humano
+                    if prospecto_existente:
+                        fuente = prospecto_existente.get("fuente", "")
+                        estado = prospecto_existente.get("estado_crm", "")
+                        
+                        if fuente == "WICAPITAL" and estado != "RECONECTADO":
+                            logger.info("🤫 Silencio Proactivo: Prospecto %s en gestión WiCapital. Ignorando.", telefono)
+                            continue
+                            
+                        if prospecto_existente.get("ia_pausada"):
+                            logger.info("IA pausada para %s — mensaje ignorado por bot.", telefono)
+                            continue
+
+                    # ── 3. VERIFICAR ESCALADA A HUMANO ───────────────────────
                     intentos_fallidos = await _get_intentos_fallidos(telefono)
                     escalada = engine.should_escalate(telefono, texto, intentos_fallidos)
                     if escalada.escalar:
@@ -245,13 +281,18 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                         logger.warning("Escalada a humano: %s — motivo: %s", telefono, escalada.motivo)
                         continue
 
-                    # Verificar si IA está pausada para este número
-                    if await _is_ia_pausada(telefono):
-                        logger.info("IA pausada para %s — mensaje ignorado por bot.", telefono)
-                        continue
+                    # ── 4. CONSULTA CRM PREVIA (NO REPETIR PREGUNTAS) ──────────
+                    contexto_previo = ""
+                    if prospecto_existente:
+                        contexto_previo = (
+                            f"Datos conocidos: Cargo={prospecto_existente.get('cargo')}, "
+                            f"Entidad={prospecto_existente.get('empresa')}, "
+                            f"Sector={prospecto_existente.get('sector_economico')}. "
+                            f"NO REPETIR preguntas sobre estos datos."
+                        )
 
-                    # ── 3. PERFILAR CON LLAMA 3.3 ────────────────────────────
-                    perfil: PerfilProspecto = await perfilar_prospecto_llama(texto)
+                    # ── 5. PERFILAR CON LLAMA 3.3 ────────────────────────────
+                    perfil: PerfilProspecto = await perfilar_prospecto_llama(texto, contexto_previo=contexto_previo)
 
                     # ── 4. REGLAS DE NEGOCIO → RUTEO ─────────────────────────
                     banco_detectado = getattr(perfil, "banco_detectado", "No especificado")
@@ -270,7 +311,7 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                         resumen_ia=perfil.resumen_analisis,
                     )
 
-                    # ── 5. GUARDAR EN CRM ─────────────────────────────────────
+                    # ── 5. GUARDAR EN CRM (Firestore First + Sheets Backup) ────
                     prospecto = Prospecto(
                         telefono=telefono,
                         nombre=nombre,
@@ -287,11 +328,30 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                         estado_crm="NUEVO" if perfil.califica else "DESCALIFICADO",
                         fuente="WHATSAPP_INBOUND",
                     )
-                    crm.upsert_prospecto(prospecto)
+                    
+                    # Persistencia en Firestore (Crítico)
+                    crm_fs.upsert_prospecto(prospecto)
+                    
+                    # Sincronización a Sheets (Opcional/Secundario)
+                    try:
+                        crm_gs.upsert_prospecto(prospecto)
+                    except Exception as gexc:
+                        logger.warning("Fallo secundario al escribir en Sheets: %s", gexc)
 
                     # ── 6. RESPONDER CON MISTRAL ─────────────────────────────
-                    # Usar respuesta sugerida por Llama si está disponible
-                    if perfil.respuesta_sugerida:
+                    redireccion_str = ""
+                    if producto_str == "HIPOTECARIO" and not perfil.califica:
+                        redireccion_str = " | ACCIÓN: Ofrécele inmediatamente Libranza o Consumo como alternativa rápida."
+
+                    contexto_reactivacion = ""
+                    if is_reactivacion:
+                        contexto_reactivacion = (
+                            " | INSTRUCCIÓN TEMPORAL: Este mensaje lo envió el cliente anoche fuera de horario. "
+                            "Inicia tu respuesta saludando amablemente por la mañana, haciendo referencia a que leíste su consulta "
+                            "de anoche y continúa el asesoramiento con naturalidad."
+                        )
+
+                    if perfil.respuesta_sugerida and not is_reactivacion:
                         respuesta = perfil.respuesta_sugerida
                     else:
                         respuesta = await responder_chat_mistral(
@@ -300,8 +360,8 @@ async def _procesar_mensaje_entrante(body: Dict[str, Any]) -> None:
                                 f"Nombre: {nombre}, Sector: {perfil.sector_economico.value}, "
                                 f"Producto: {producto_str}, Banco: {banco_detectado}, "
                                 f"Califica: {perfil.califica}, "
-                                f"Outsourcing: {resultado_ruteo.outsourcing}"
-                            ),
+                                f"Outsourcing: {resultado_ruteo.outsourcing}{redireccion_str}{contexto_reactivacion}"
+                            )
                         )
                     wa.enviar_texto(telefono, respuesta)
                     
@@ -363,12 +423,31 @@ async def _is_ia_pausada(telefono: str) -> bool:
     except Exception:
         return False
 
+async def _verificar_abandono_24h(telefono: str) -> bool:
+    """Retorna True si han pasado > 24h desde la última interacción."""
+    try:
+        from google.cloud import firestore
+        from datetime import datetime, timedelta, timezone
+        db = firestore.Client(project=_settings.google_cloud_project)
+        doc = db.collection("chat_states").document(telefono.replace("+", "")).get()
+        if doc.exists:
+            data = doc.to_dict()
+            ultima_vez = data.get("ultima_interaccion")
+            if ultima_vez:
+                # Firestore timestamp to datetime
+                ahora = datetime.now(timezone.utc)
+                if ahora - ultima_vez > timedelta(hours=24):
+                    return True
+        return False
+    except Exception:
+        return False
+
 async def _reset_intentos_fallidos(telefono: str) -> None:
     try:
         from google.cloud import firestore
         db = firestore.Client(project=_settings.google_cloud_project)
         db.collection("chat_states").document(telefono.replace("+", "")).set(
-            {"intentos_fallidos": 0}, merge=True
+            {"intentos_fallidos": 0, "ultima_interaccion": firestore.SERVER_TIMESTAMP}, merge=True
         )
     except Exception:
         pass
@@ -508,16 +587,31 @@ async def retomar_cliente(payload: RetomarClienteRequest) -> RespuestaBase:
 
 class CampanaMasivaRequest(BaseModel):
     csv_contenido:    Optional[str]             = None
+    gcs_uri:          Optional[str]             = Field(default=None, description="URI de Cloud Storage (ej: gs://mi-bucket/base.csv)")
     contactos:        Optional[List[Dict[str, str]]] = None
     nombre_plantilla: str  = "RETOMA_LIBRANZA"
     lote_size:        int  = Field(default=50, ge=1, le=100)
 
 @router.post("/crm/campana-masiva", tags=["CRM"])
 async def campana_masiva(payload: CampanaMasivaRequest, background_tasks: BackgroundTasks) -> Dict[str, Any]:
-    contactos = (
-        procesar_csv_contactos(payload.csv_contenido) if payload.csv_contenido
-        else payload.contactos or []
-    )
+    if payload.gcs_uri:
+        try:
+            from google.cloud import storage
+            client = storage.Client(project=_settings.google_cloud_project)
+            bucket_name = payload.gcs_uri.replace("gs://", "").split("/")[0]
+            blob_name = "/".join(payload.gcs_uri.replace("gs://", "").split("/")[1:])
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            csv_data = blob.download_as_text()
+            contactos = procesar_csv_contactos(csv_data)
+        except Exception as exc:
+            logger.error("Error leyendo de Cloud Storage: %s", exc)
+            raise HTTPException(status_code=500, detail=f"Error leyendo de Cloud Storage: {exc}")
+    elif payload.csv_contenido:
+        contactos = procesar_csv_contactos(payload.csv_contenido)
+    else:
+        contactos = payload.contactos or []
+
     if not contactos:
         raise HTTPException(status_code=400, detail="Sin contactos válidos.")
     background_tasks.add_task(_ejecutar_campana_masiva, contactos, payload.nombre_plantilla, payload.lote_size)
@@ -545,6 +639,13 @@ async def auditar_chat(payload: AuditarChatRequest) -> Dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════════════════════
 # WICAPITAL
 # ═══════════════════════════════════════════════════════════════════════════════
+
+@router.post("/webhook/whatsapp", tags=["WhatsApp"])
+async def whatsapp_webhook(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    x_hub_signature_256: Optional[str] = Header(None),
+):
 
 @router.post("/wicapital/sync", tags=["WiCapital"])
 async def sincronizar_wicapital(
@@ -981,7 +1082,7 @@ async def enviar_mensaje_manual(
         wa = WhatsAppCloudAPI()
         
         # Enviar vía Meta
-        exito = wa.enviar_mensaje_texto(telefono, mensaje)
+        exito = wa.enviar_texto(telefono, mensaje)
         
         if exito:
             # Registrar contacto en CRM
@@ -1033,3 +1134,68 @@ async def bypass_fallback_wicapital(
     """Flujo de contingencia: Inyecta un caso manual y avisa al sistema para que la IA actúe."""
     # Simula lanzar una notificación por webhook/websocket a Llama 3
     return {"exito": True, "mensaje": f"Lead {negocio_id} inyectado al motor de reglas."}
+
+@router.post("/cola/procesar", tags=["Sistema"])
+async def procesar_cola_mensajes(
+    max_items: int = Query(50, description="Máximo de mensajes a procesar en este lote."),
+    secret: str = Query(..., description="Token de seguridad para evitar disparos accidentales.")
+) -> Dict[str, Any]:
+    """
+    Vaciado inteligente de la cola de mensajes acumulados fuera de horario.
+    Este endpoint debe ser llamado por Cloud Scheduler al iniciar la jornada.
+    """
+    from app.core.config import get_settings
+    settings = get_settings()
+    
+    if secret != settings.cron_secret:
+        raise HTTPException(status_code=403, detail="Secret inválido.")
+    
+    try:
+        procesados = await process_queue(max_items=max_items)
+        return {
+            "exito": True, 
+            "mensajes_procesados": procesados,
+            "mensaje": f"Se reactivaron {procesados} conversaciones con contexto matutino."
+        }
+    except Exception as exc:
+        logger.error("Error en motor de reactivación: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+# ─── FUNCIONES AUXILIARES DE CONTROL ──────────────────────────────────────────
+
+async def _is_ia_pausada(telefono: str) -> bool:
+    """
+    Verifica si un humano ha tomado el control de la conversación.
+    Consulta el CRM (GSheets) para ver si el estado es 'ATENCION_HUMANA' o similar.
+    """
+    try:
+        crm = GoogleSheetsCRM()
+        prospecto = crm.get_prospecto_by_telefono(telefono)
+        if prospecto and prospecto.get("Estado_CRM") in ["ATENCION_HUMANA", "ESCALADO", "MUDOS_CON_BOT"]:
+            return True
+        return False
+    except Exception:
+        return False
+
+async def _verificar_abandono_24h(telefono: str) -> bool:
+    """
+    Verifica si han pasado más de 24 horas desde el último mensaje del usuario.
+    Retorna True si hay abandono.
+    """
+    try:
+        crm = GoogleSheetsCRM()
+        prospecto = crm.get_prospecto_by_telefono(telefono)
+        if not prospecto:
+            return False
+            
+        fecha_str = prospecto.get("Ultimo_Contacto")
+        if not fecha_str:
+            return False
+            
+        from datetime import datetime
+        ultimo_contacto = datetime.fromisoformat(fecha_str)
+        diff = datetime.utcnow() - ultimo_contacto
+        
+        return diff.total_seconds() > 86400  # 24 horas
+    except Exception:
+        return False

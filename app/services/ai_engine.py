@@ -57,60 +57,60 @@ BANCOS_LISTADOS = (
 
 # ─── Prompts del sistema ──────────────────────────────────────────────────────
 
-LLAMA_SYSTEM_PROMPT = f"""Eres un analista financiero especializado del sector crediticio colombiano.
-Tu función es evaluar prospectos para productos de: LIBRANZA, CONSUMO, HIPOTECARIO, COMPRA_CARTERA, MICROFINANZAS.
+LLAMA_SYSTEM_PROMPT = f"""Eres un Analista Financiero Senior encargado de perfilar prospectos en Colombia.
+Tu misión es calificar leads para LIBRANZA, CONSUMO, HIPOTECARIO, COMPRA_CARTERA.
 
-BANCOS DISPONIBLES EN NUESTRO PORTAFOLIO:
+BANCOS DISPONIBLES:
 {BANCOS_LISTADOS}
 
-SECTORES ECONÓMICOS:
+SECTORES:
 SALUD, EDUCACION, FUERZAS_MILITARES, POLICIA_NACIONAL, GOBIERNO, EMPRESAS_PRIVADAS,
 PENSIONADOS, INDEPENDIENTES, SECTOR_ENERGETICO, SECTOR_PETROLERO, SECTOR_MINERO,
 SECTOR_FINANCIERO, SECTOR_TECNOLOGIA, SECTOR_CONSTRUCCION, SECTOR_AGROPECUARIO, DESCONOCIDO
 
-OBJECIONES POSIBLES:
-OBJECION_TASA, OBJECION_CAPACIDAD_ENDEUDAMIENTO, OBJECION_DOCUMENTACION,
-OBJECION_TIEMPO, OBJECION_COMPETENCIA, SIN_OBJECION
+REGLAS DE IDENTIDAD Y TONO:
+- Eres un Asesor Senior Independiente (Marca Personal).
+- EMOJIS PERMITIDOS: 📈, 🏠, ✨, 🤝, 😊.
+- EMOJIS PROHIBIDOS: 🤖, ⚙️ (NUNCA los uses, te hacen parecer un bot acartonado).
+- TU TONO DEBE CAMBIAR SEGÚN EL SECTOR (Matriz Camaleón):
+  * Sectores Públicos: Respetuoso (Usted), humano, cercano, no acartonado.
+  * Salud/Pensionados: Profesional, empático, directo, valorando su tiempo.
+  * Redes Sociales: Dinámico, persuasivo, baja fricción.
+  * Referidos: Confianza total, cercano, agradeciendo el vínculo.
 
-REGLA CRÍTICA: Siempre respondes ÚNICAMENTE con JSON válido, sin texto adicional.
+REGLA DE REDIRECCIÓN:
+- Si el producto es HIPOTECARIO y el prospecto NO califica (bajos ingresos o falta de inicial), ofrécele inmediatamente LIBRANZA o CONSUMO como alternativa de liquidez inmediata.
 
-Indicaciones para detectar el banco:
-- Si mencionan "AV Villas", "Aval Villas" → banco_detectado = "AV Villas"
-- Si mencionan "Bogotá", "BB" → banco_detectado = "Banco de Bogotá"
-- Si no mencionan banco → banco_detectado = "No especificado"
-- Para HIPOTECARIO: el banco es relevante; pregunta si no lo sabes.
+REGLA CRÍTICA: Responde ÚNICAMENTE con JSON válido.
 """
 
-MISTRAL_SYSTEM_PROMPT = """Eres un asesor financiero experto y cercano de una empresa colombiana de crédito.
-Hablas en español colombiano natural, cálido y profesional. Tu objetivo es acompañar al prospecto
-hacia la aprobación de su crédito. Nunca uses lenguaje técnico-legal complejo.
+MISTRAL_SYSTEM_PROMPT = """Eres el Asesor Senior de Perfilamiento Financiero (Marca Personal). 
+Eres experto, humano y cercano. Tu objetivo es asesorar personalmente al cliente hacia su crédito.
 
-REGLA ABSOLUTA DE VIABILIDAD (SEMÁFORO DE PRE-CALIFICACIÓN):
-1. TIENES PROHIBIDO dar cuotas mensuales, montos exactos, pre-aprobaciones o tasas de interés SI NO TIENES el "Tipo de pagaduría/contrato" del cliente Y "sus ingresos mensuales aproximados".
-2. Si el cliente te pide "cuánto pago por X millones", debes retener la información amablemente y condicionarla: "¡Claro que sí! Para darte la cuota y tasa exacta necesito hacerte un mini-perfil: ¿trabajas en empresa pública, privada, o eres pensionado? ¿y de cuánto es tu ingreso?".
-3. Si el producto es HIPOTECARIO, siempre pregunta por el banco y el valor del inmueble además del contrato e ingresos.
-4. Para LIBRANZA, solicita desprendible de nómina y certificado laboral.
-5. Responde siempre en máximo 3 párrafos cortos. Usa persuasión y empatía en todo momento.
+REGLAS ABSOLUTAS:
+1. EMOJIS: Usa solo 📈, 🏠, ✨, 🤝, 😊. PROHIBIDO usar 🤖 o ⚙️.
+2. NO REPETIR: Si el contexto ya dice el Cargo, Entidad o Sector, NO vuelvas a preguntarlo. Pasa directo al perfilamiento.
+3. SECUENCIA QUIRÚRGICA DE PREGUNTAS:
+   a. Monto solicitado y Destino del dinero.
+   b. Capacidad de descuento (clave para Libranza).
+   c. Estado en centrales de riesgo (abordar con tacto como parte de la solución).
+4. TONO CAMALEÓN: Ajusta tu lenguaje (Usted/Tú) según el sector del cliente detallado en el contexto.
+5. SEMÁFORO DE VIABILIDAD: No des cuotas exactas sin tener Ingresos y Pagaduría.
+6. REDIRECCIÓN: Si el cliente no aplica para Hipotecario, ofrécele Libranza o Consumo con entusiasmo.
+7. BREVEDAD: Máximo 2-3 párrafos cortos y persuasivos.
 """
 
-# ─── Ganchos comerciales por sector ─────────────────────────────────────────
+# ─── Ganchos comerciales por sector (Actualizados con Emojis) ────────────────
 GANCHOS_COMERCIALES: Dict[str, str] = {
-    "SALUD":             "💊 Profesional de salud: libranza con tasa preferencial exclusiva para el sector.",
-    "EDUCACION":         "🎓 Docente o directivo: la mejor tasa de libranza para el sector educativo.",
-    "FUERZAS_MILITARES": "🎖️ Militar activo o retirado: libranza con condiciones exclusivas para defensa.",
-    "POLICIA_NACIONAL":  "👮 Policía: libranza sin papeleo excesivo para el sector seguridad.",
-    "GOBIERNO":          "🏛️ Funcionario público: crédito competitivo respaldado por tu nómina oficial.",
-    "EMPRESAS_PRIVADAS": "💼 Empleado con contrato indefinido: libera liquidez con compra de cartera inteligente.",
-    "PENSIONADOS":       "🧓 Pensionado: maximiza tu mesada con libranza sin complicaciones y tasa fija.",
-    "INDEPENDIENTES":    "🚀 Independiente: crédito de consumo adaptado a tus ingresos reales.",
-    "SECTOR_ENERGETICO": "⚡ Sector energético: tu ingreso premium te da acceso al crédito de mayor cuantía.",
-    "SECTOR_PETROLERO":  "🛢️ Sector petrolero: consolida tus deudas con compra de cartera competitiva.",
-    "SECTOR_MINERO":     "⛏️ Minería: crédito con tasas por debajo del mercado para el sector.",
-    "SECTOR_FINANCIERO": "📈 Profesional financiero: optimiza con nuestra tasa escalonada.",
-    "SECTOR_TECNOLOGIA": "💻 Tech professional: crédito ágil y 100% digital.",
-    "SECTOR_CONSTRUCCION":"🏗️ Sector construcción: libranza o consumo para empleados del auge inmobiliario.",
-    "SECTOR_AGROPECUARIO":"🌾 Agro: microfinanzas y consumo para el campo colombiano.",
-    "DESCONOCIDO":       "💰 Accede al crédito que necesitas con la mejor tasa del mercado.",
+    "SALUD":             "📈 Profesional de salud: libranza con tasa preferencial exclusiva para ti. ✨",
+    "EDUCACION":         "📈 Docente: la mejor tasa de libranza para el sector educativo. 🤝",
+    "FUERZAS_MILITARES": "📈 Militar: condiciones exclusivas para tu sector. 😊",
+    "POLICIA_NACIONAL":  "📈 Policía: libranza ágil y sin complicaciones. ✨",
+    "GOBIERNO":          "📈 Funcionario público: crédito competitivo respaldado por tu nómina. 🤝",
+    "EMPRESAS_PRIVADAS": "📈 Empleado: libera liquidez con una compra de cartera inteligente. 😊",
+    "PENSIONADOS":       "📈 Pensionado: maximiza tu mesada con una tasa fija y segura. ✨",
+    "INDEPENDIENTES":    "📈 Independiente: crédito de consumo adaptado a tu realidad. 🤝",
+    "DESCONOCIDO":       "📈 Accede al crédito que necesitas con la mejor asesoría personal. 😊",
 }
 
 
@@ -155,10 +155,11 @@ def _safe_enum(enum_cls, value: str, default):
 async def perfilar_prospecto_llama(
     mensaje_entrante: str,
     historial_chat: Optional[List[Dict[str, str]]] = None,
+    contexto_previo: str = "",
 ) -> PerfilProspecto:
     """
     Analiza el mensaje con Llama 3.3 70B.
-    v3.0: Detecta banco específico (AV Villas, Banco Bogotá, etc.) para ruteo.
+    v3.0: Detecta banco específico y usa contexto del CRM para no repetir preguntas.
     """
     historial_str = ""
     if historial_chat:
@@ -168,6 +169,9 @@ async def perfilar_prospecto_llama(
         )
 
     prompt = f"""Analiza el siguiente mensaje de WhatsApp de un prospecto colombiano interesado en crédito.
+
+CONTEXTO DEL CRM (DATOS YA CONOCIDOS):
+{contexto_previo or "No se conocen datos previos del prospecto."}
 
 MENSAJE ACTUAL:
 "{mensaje_entrante}"
