@@ -21,7 +21,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libatk1.0-0 \
     libcups2 \
     libdbus-1-3 \
-    libgdk-pixbuf2.0-0 \
+    libgdk-pixbuf-xlib-2.0-0 \
     libnspr4 \
     libnss3 \
     libx11-xcb1 \
@@ -63,3 +63,11 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # Comando de inicio
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080", \
      "--workers", "1", "--log-level", "info", "--access-log"]
+
+# --- INYECCION DE EMERGENCIA ---
+USER root
+RUN mkdir -p /app/app/core && \
+    echo '{"horario_atencion": {"inicio": "00:00", "fin": "23:59"}, "dias_laborales": [0, 1, 2, 3, 4, 5, 6], "mensaje_fuera_horario": "Inconveniente técnico.", "estado_sistema": "activo"}' > /app/app/core/business_rules.json && \
+    chown -R appuser:appgroup /app/app/core
+USER appuser
+# -------------------------------

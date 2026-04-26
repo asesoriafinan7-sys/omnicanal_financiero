@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse, PlainTextResponse
+from app.core.websockets import manager
 from pydantic import BaseModel, Field
 
 from app.core.business_rules import get_rules_engine
@@ -59,7 +60,6 @@ from app.services.whatsapp_service import (
     analizar_chat_exportado_local,
     procesar_csv_contactos,
 )
-from app.core.websockets import manager
 
 from app.core.office_hours import (
     enqueue_message,
@@ -458,12 +458,15 @@ async def _reset_intentos_fallidos(telefono: str) -> None:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 @router.post("/cola/procesar", tags=["Sistema"])
-async def procesar_cola_manual(
+async def procesar_cola_mensajes(
     max_items: int = Query(default=50, ge=1, le=200),
     background_tasks: BackgroundTasks = None,
     x_cron_secret: Optional[str] = Header(None, alias="X-Cron-Secret"),
 ) -> Dict[str, Any]:
-    """Procesa manualmente la cola de mensajes fuera de horario."""
+    """
+    Vaciado inteligente de la cola de mensajes acumulados fuera de horario.
+    Este endpoint debe ser llamado por Cloud Scheduler al iniciar la jornada.
+    """
     if not x_cron_secret or x_cron_secret != _settings.cron_secret:
         logger.warning("Intento de procesamiento de cola no autorizado.")
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="No autorizado.")
@@ -471,12 +474,22 @@ async def procesar_cola_manual(
     if not is_office_hours():
         return {"status": "ignorado", "mensaje": "Fuera de horario laboral — cola no procesada."}
 
-    if background_tasks:
-        background_tasks.add_task(process_queue, max_items)
-        return {"status": "encolado", "mensaje": f"Procesando hasta {max_items} mensajes en background."}
-
-    procesados = process_queue(max_items)
-    return {"status": "completado", "procesados": procesados}
+    try:
+        if background_tasks:
+            # En producción, delegamos a una tarea en segundo plano para responder rápido
+            background_tasks.add_task(process_queue, max_items)
+            return {"status": "encolado", "mensaje": f"Procesando hasta {max_items} mensajes en background."}
+        
+        # Ejecución directa (testing)
+        procesados = await process_queue(max_items)
+        return {
+            "exito": True, 
+            "mensajes_procesados": procesados,
+            "mensaje": f"Se reactivaron {procesados} conversaciones con contexto matutino."
+        }
+    except Exception as exc:
+        logger.error("Error en motor de reactivación: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 @router.post("/ia/reanudar/{telefono}", tags=["Sistema"])
@@ -1100,8 +1113,6 @@ async def enviar_mensaje_manual(
 @router.get("/social/logs", tags=["Ecosistema"])
 async def obtener_logs_sociales() -> Dict[str, Any]:
     """Retorna los logs de respuestas orgánicas de Llama 3 en Meta/TikTok."""
-    # Placeholder: En el futuro conectará con Base de datos / Firestore
-    # Retornará 500 si no hay conexión real, forzando los Mocks en Frontend.
     raise HTTPException(status_code=500, detail="Módulo de base de datos social no configurado aún.")
 
 @router.get("/whatsapp/chats", tags=["Ecosistema"])
@@ -1135,31 +1146,7 @@ async def bypass_fallback_wicapital(
     # Simula lanzar una notificación por webhook/websocket a Llama 3
     return {"exito": True, "mensaje": f"Lead {negocio_id} inyectado al motor de reglas."}
 
-@router.post("/cola/procesar", tags=["Sistema"])
-async def procesar_cola_mensajes(
-    max_items: int = Query(50, description="Máximo de mensajes a procesar en este lote."),
-    secret: str = Query(..., description="Token de seguridad para evitar disparos accidentales.")
-) -> Dict[str, Any]:
-    """
-    Vaciado inteligente de la cola de mensajes acumulados fuera de horario.
-    Este endpoint debe ser llamado por Cloud Scheduler al iniciar la jornada.
-    """
-    from app.core.config import get_settings
-    settings = get_settings()
-    
-    if secret != settings.cron_secret:
-        raise HTTPException(status_code=403, detail="Secret inválido.")
-    
-    try:
-        procesados = await process_queue(max_items=max_items)
-        return {
-            "exito": True, 
-            "mensajes_procesados": procesados,
-            "mensaje": f"Se reactivaron {procesados} conversaciones con contexto matutino."
-        }
-    except Exception as exc:
-        logger.error("Error en motor de reactivación: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
+# Archivo finalizado sin conflictos.
 
 # ─── FUNCIONES AUXILIARES DE CONTROL ──────────────────────────────────────────
 
@@ -1169,6 +1156,7 @@ async def _is_ia_pausada(telefono: str) -> bool:
     Consulta el CRM (GSheets) para ver si el estado es 'ATENCION_HUMANA' o similar.
     """
     try:
+        from app.services.crm_sync import GoogleSheetsCRM
         crm = GoogleSheetsCRM()
         prospecto = crm.get_prospecto_by_telefono(telefono)
         if prospecto and prospecto.get("Estado_CRM") in ["ATENCION_HUMANA", "ESCALADO", "MUDOS_CON_BOT"]:
@@ -1183,6 +1171,7 @@ async def _verificar_abandono_24h(telefono: str) -> bool:
     Retorna True si hay abandono.
     """
     try:
+        from app.services.crm_sync import GoogleSheetsCRM
         crm = GoogleSheetsCRM()
         prospecto = crm.get_prospecto_by_telefono(telefono)
         if not prospecto:
@@ -1192,10 +1181,12 @@ async def _verificar_abandono_24h(telefono: str) -> bool:
         if not fecha_str:
             return False
             
-        from datetime import datetime
+        from datetime import datetime, timezone
         ultimo_contacto = datetime.fromisoformat(fecha_str)
-        diff = datetime.utcnow() - ultimo_contacto
-        
+        if ultimo_contacto.tzinfo is None:
+            ultimo_contacto = ultimo_contacto.replace(tzinfo=timezone.utc)
+            
+        diff = datetime.now(timezone.utc) - ultimo_contacto
         return diff.total_seconds() > 86400  # 24 horas
     except Exception:
         return False

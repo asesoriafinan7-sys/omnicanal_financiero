@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # ── Vertex AI ────────────────────────────────────────────────────────────
     vertex_ai_location: str = "us-central1"
-    llama_endpoint_id: str = os.environ.get("LLAMA_ENDPOINT_ID", "meta/llama-3.3-70b-instruct-maas")
+    llama_endpoint_id: str = os.environ.get("LLAMA_ENDPOINT_ID", "gemini-1.5-flash-001-001-001")
     mistral_endpoint_id: str = os.environ.get("MISTRAL_ENDPOINT_ID", "mistral-large@2411")
 
     # ── Google Sheets CRM ─────────────────────────────────────────────────────

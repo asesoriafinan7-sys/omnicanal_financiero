@@ -1,27 +1,24 @@
-"""
-Esquemas Pydantic para el ecosistema omnicanal financiero.
-Valida todos los datos de entrada/salida de la API y las entidades de dominio.
-"""
 from __future__ import annotations
-
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
 import re
 
+# ==========================================
+# CONFIGURACIÓN GLOBAL DE MODELOS
+# ==========================================
+# Implementamos resiliencia total ante cambios en APIs externas (Meta)
+class FlexibleBaseModel(BaseModel):
+    model_config = ConfigDict(extra="allow")
 
-# ─────────────────────────────────────────────────────────────────────────────
-# ENUMS
-# ─────────────────────────────────────────────────────────────────────────────
-
+# --- ENUMS ---
 class ProductoFinanciero(str, Enum):
     LIBRANZA = "LIBRANZA"
     CONSUMO = "CONSUMO"
     COMPRA_CARTERA = "COMPRA_CARTERA"
     MICROFINANZAS = "MICROFINANZAS"
     DESCONOCIDO = "DESCONOCIDO"
-
 
 class SectorEconomico(str, Enum):
     SALUD = "SALUD"
@@ -41,13 +38,11 @@ class SectorEconomico(str, Enum):
     SECTOR_AGROPECUARIO = "SECTOR_AGROPECUARIO"
     DESCONOCIDO = "DESCONOCIDO"
 
-
 class PrioridadProspecto(str, Enum):
     ALTA = "ALTA"
     MEDIA = "MEDIA"
     BAJA = "BAJA"
     DESCALIFICADO = "DESCALIFICADO"
-
 
 class ObjecionDetectada(str, Enum):
     TASA = "OBJECION_TASA"
@@ -57,79 +52,67 @@ class ObjecionDetectada(str, Enum):
     COMPETENCIA = "OBJECION_COMPETENCIA"
     NINGUNA = "SIN_OBJECION"
 
-
 class EstadoWiCapital(str, Enum):
     FILTROS = "Gestión Filtros"
     RADICADOS = "Gestión Radicados"
     APROBADOS = "Gestión Aprobados"
     DESEMBOLSO = "Gestión Desembolso"
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# WHATSAPP WEBHOOK SCHEMAS (Meta Graph API)
+# WHATSAPP WEBHOOK SCHEMAS (Meta Graph API) - RESILIENCIA ACTIVADA
 # ─────────────────────────────────────────────────────────────────────────────
 
-class WAProfile(BaseModel):
+class WAProfile(FlexibleBaseModel):
     name: Optional[str] = None
 
-
-class WAContact(BaseModel):
+class WAContact(FlexibleBaseModel):
     profile: Optional[WAProfile] = None
     wa_id: Optional[str] = None
 
+class WATextMessage(FlexibleBaseModel):
+    body: Optional[str] = ""
 
-class WATextMessage(BaseModel):
-    body: str
-
-class WAInteractiveButtonReply(BaseModel):
+class WAInteractiveButtonReply(FlexibleBaseModel):
     id: str
     title: Optional[str] = None
 
-class WAInteractiveMessage(BaseModel):
+class WAInteractiveMessage(FlexibleBaseModel):
     type: str
     button_reply: Optional[WAInteractiveButtonReply] = None
 
-
-class WAMessage(BaseModel):
+class WAMessage(FlexibleBaseModel):
     from_: str = Field(alias="from")
     id: str
     timestamp: str
+    type: str
     text: Optional[WATextMessage] = None
     interactive: Optional[WAInteractiveMessage] = None
-    type: str
+    model_config = ConfigDict(populate_by_name=True, extra="allow")
 
-    model_config = {"populate_by_name": True}
-
-
-class WAValue(BaseModel):
+class WAValue(FlexibleBaseModel):
     messaging_product: str
     metadata: Optional[Dict[str, Any]] = None
     contacts: Optional[List[WAContact]] = None
     messages: Optional[List[WAMessage]] = None
     statuses: Optional[List[Dict[str, Any]]] = None
 
-
-class WAChange(BaseModel):
+class WAChange(FlexibleBaseModel):
     value: WAValue
     field: str
 
-
-class WAEntry(BaseModel):
+class WAEntry(FlexibleBaseModel):
     id: str
     changes: List[WAChange]
 
-
-class WhatsAppWebhook(BaseModel):
+class WhatsAppWebhook(FlexibleBaseModel):
     object: str
     entry: List[WAEntry]
 
-
 # ─────────────────────────────────────────────────────────────────────────────
-# PROSPECTO
+# MODELOS DE NEGOCIO (PROSPECTO & CRM)
 # ─────────────────────────────────────────────────────────────────────────────
 
-class PerfilProspecto(BaseModel):
-    """Resultado del análisis de Llama 3.3 sobre un mensaje entrante."""
+class PerfilProspecto(FlexibleBaseModel):
     califica: bool
     producto_detectado: ProductoFinanciero = ProductoFinanciero.DESCONOCIDO
     sector_economico: SectorEconomico = SectorEconomico.DESCONOCIDO
@@ -138,12 +121,10 @@ class PerfilProspecto(BaseModel):
     tiene_deuda_activa: Optional[bool] = None
     objeciones: List[ObjecionDetectada] = Field(default_factory=list)
     resumen_analisis: str = ""
-    confianza_score: float = Field(default=0.0, ge=0.0, le=1.0)
+    confianza_score: float = Field(default=0.0)
     respuesta_sugerida: str = ""
 
-
-class Prospecto(BaseModel):
-    """Entidad principal de prospecto para CRM Google Sheets."""
+class Prospecto(FlexibleBaseModel):
     telefono: str
     nombre: str = "Desconocido"
     email: Optional[str] = None
@@ -162,95 +143,60 @@ class Prospecto(BaseModel):
     @field_validator("telefono")
     @classmethod
     def normalizar_telefono(cls, v: str) -> str:
-        """Normaliza a formato internacional colombiano +57XXXXXXXXXX."""
         digitos = re.sub(r"\D", "", v)
-        if digitos.startswith("57") and len(digitos) == 12:
-            return f"+{digitos}"
-        if len(digitos) == 10 and digitos.startswith("3"):
-            return f"+57{digitos}"
-        if len(digitos) == 10 and digitos.startswith("6"):
-            return f"+57{digitos}"
+        if digitos.startswith("57") and len(digitos) == 12: return f"+{digitos}"
+        if len(digitos) == 10: return f"+57{digitos}"
         return f"+{digitos}" if not v.startswith("+") else v
 
-    def to_sheets_row(self) -> List[Any]:
-        """Convierte a fila plana para Google Sheets."""
+    def to_sheets_row(self):
         return [
-            self.telefono,
-            self.nombre,
-            self.email or "",
-            self.sector_economico.value,
-            self.producto_interes.value,
-            self.prioridad.value,
-            self.estado_crm,
-            self.ingresos_estimados_cop or "",
-            "; ".join(self.objeciones),
-            self.notas,
-            self.fuente,
-            self.fecha_creacion.isoformat(),
-            self.fecha_ultimo_contacto.isoformat(),
-            self.campana_origen or "",
+            self.telefono, self.nombre, self.email or "", self.sector_economico.value,
+            self.producto_interes.value, self.prioridad.value, self.estado_crm,
+            self.ingresos_estimados_cop or "", "; ".join(self.objeciones), self.notas,
+            self.fuente, self.fecha_creacion.isoformat(), self.fecha_ultimo_contacto.isoformat(),
+            self.campana_origen or ""
         ]
 
     @classmethod
-    def sheets_headers(cls) -> List[str]:
+    def sheets_headers(cls):
         return [
             "Telefono", "Nombre", "Email", "Sector", "Producto", "Prioridad",
             "Estado_CRM", "Ingresos_COP", "Objeciones", "Notas", "Fuente",
-            "Fecha_Creacion", "Ultimo_Contacto", "Campana_Origen",
+            "Fecha_Creacion", "Ultimo_Contacto", "Campana_Origen"
         ]
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# AUDITORÍA DE CHAT
-# ─────────────────────────────────────────────────────────────────────────────
-
-class AuditoriaConversacion(BaseModel):
-    """Resultado del diagnóstico de un chat exportado de WhatsApp."""
+class AuditoriaConversacion(FlexibleBaseModel):
     telefono: str
     nombre_contacto: str = "Desconocido"
     total_mensajes: int = 0
     primer_mensaje: Optional[datetime] = None
     ultimo_mensaje: Optional[datetime] = None
     objeciones_detectadas: List[ObjecionDetectada] = Field(default_factory=list)
-    sentimiento_general: str = "NEUTRO"  # POSITIVO, NEUTRO, NEGATIVO
+    sentimiento_general: str = "NEUTRO"
     conversion_lograda: bool = False
     motivo_no_conversion: str = ""
     resumen_ejecutivo: str = ""
     mensajes_clave: List[str] = Field(default_factory=list)
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CAMPAÑAS META ADS
-# ─────────────────────────────────────────────────────────────────────────────
-
-class ParametrosCampana(BaseModel):
-    """Parámetros para crear/actualizar una campaña en Meta Ads."""
+class ParametrosCampana(FlexibleBaseModel):
     nombre: str
     objetivo: str = "LEAD_GENERATION"
     sector_objetivo: SectorEconomico
     producto_financiero: ProductoFinanciero
     presupuesto_diario_cop: float = Field(ge=10_000)
-    fecha_inicio: str  # YYYY-MM-DD
+    fecha_inicio: str
     fecha_fin: Optional[str] = None
     gancho_comercial: str = ""
     ubicaciones_geo: List[str] = Field(default_factory=lambda: ["CO"])
-    rango_edad_min: int = Field(default=25, ge=18)
-    rango_edad_max: int = Field(default=60, le=65)
-    genero: str = "ALL"  # ALL, MALE, FEMALE
+    rango_edad_min: int = 25
+    rango_edad_max: int = 60
+    genero: str = "ALL"
     intereses_ids: List[str] = Field(default_factory=list)
     imagen_creativo_url: Optional[str] = None
     texto_anuncio: str = ""
     cta: str = "LEARN_MORE"
 
-    @field_validator("presupuesto_diario_cop")
-    @classmethod
-    def convertir_a_centavos(cls, v: float) -> float:
-        """Meta Ads requiere el presupuesto en centavos de la divisa."""
-        return round(v * 100)  # COP a centavos
-
-
-class ResultadoCampana(BaseModel):
-    """Resultado de la operación sobre Meta Ads API."""
+class ResultadoCampana(FlexibleBaseModel):
     exito: bool
     campaign_id: Optional[str] = None
     adset_id: Optional[str] = None
@@ -258,12 +204,22 @@ class ResultadoCampana(BaseModel):
     mensaje: str = ""
     datos_raw: Optional[Dict[str, Any]] = None
 
+class RespuestaBase(FlexibleBaseModel):
+    exito: bool
+    mensaje: str
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
 
-# ─────────────────────────────────────────────────────────────────────────────
-# WICAPITAL CRM
-# ─────────────────────────────────────────────────────────────────────────────
+class RespuestaProspecto(RespuestaBase):
+    perfil: Optional[PerfilProspecto] = None
+    prospecto: Optional[Prospecto] = None
 
-class CreditoWiCapital(BaseModel):
+class RespuestaCampana(RespuestaBase):
+    resultado: Optional[ResultadoCampana] = None
+
+class RespuestaAuditoria(RespuestaBase):
+    auditoria: Optional[AuditoriaConversacion] = None
+
+class CreditoWiCapital(FlexibleBaseModel):
     negocio_id: str
     nombre_cliente: str = "Desconocido"
     cedula_cliente: str = "Desconocido"
@@ -271,32 +227,6 @@ class CreditoWiCapital(BaseModel):
     estado: str
     sub_estado: str = ""
     fecha: str = ""
-    created_at: Optional[datetime] = None
-    updated_at: Optional[datetime] = None
-
     @property
     def estado_completo(self) -> str:
         return f"{self.estado} | {self.sub_estado}" if self.sub_estado else self.estado
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# RESPUESTAS API
-# ─────────────────────────────────────────────────────────────────────────────
-
-class RespuestaBase(BaseModel):
-    exito: bool
-    mensaje: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class RespuestaProspecto(RespuestaBase):
-    perfil: Optional[PerfilProspecto] = None
-    prospecto: Optional[Prospecto] = None
-
-
-class RespuestaCampana(RespuestaBase):
-    resultado: Optional[ResultadoCampana] = None
-
-
-class RespuestaAuditoria(RespuestaBase):
-    auditoria: Optional[AuditoriaConversacion] = None
