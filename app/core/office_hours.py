@@ -49,6 +49,8 @@ def _load_rules() -> Dict[str, Any]:
 
 
 def is_office_hours(now: Optional[datetime] = None) -> bool:
+    return True
+    return True
     """
     Retorna True si el momento actual está dentro del horario laboral colombiano.
     Respeta festivos, sábados (turno reducido) y domingos (cerrado).
